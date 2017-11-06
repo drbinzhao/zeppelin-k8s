@@ -19,49 +19,22 @@
 package org.apache.zeppelin.interpreter.launcher;
 
 import org.apache.zeppelin.conf.ZeppelinConfiguration;
-import org.apache.zeppelin.interpreter.InterpreterOption;
 import org.apache.zeppelin.interpreter.InterpreterRunner;
-import org.apache.zeppelin.interpreter.remote.RemoteInterpreterManagedProcess;
-import org.apache.zeppelin.interpreter.remote.RemoteInterpreterRunningProcess;
-import org.apache.zeppelin.interpreter.remote.RemoteInterpreterUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.zeppelin.interpreter.remote.SparkK8RemoteInterpreterManagedProcess;
 
-import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Interpreter Launcher which use shell script to launch the interpreter process.
- *
+ * Interpreter Launcher which use shell script to launch Spark interpreter process,
+ * on Kubernetes cluster.
  */
-public class ShellScriptLauncher extends InterpreterLauncher {
+public class SparkK8InterpreterLauncher extends SparkInterpreterLauncher {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(ShellScriptLauncher.class);
-
-  public ShellScriptLauncher(ZeppelinConfiguration zConf) {
+  public SparkK8InterpreterLauncher(ZeppelinConfiguration zConf) {
     super(zConf);
   }
 
   @Override
-  public InterpreterClient launch(InterpreterLaunchContext context) {
-    LOGGER.info("Launching Interpreter: " + context.getInterpreterGroupName());
-    this.properties = context.getProperties();
-    InterpreterOption option = context.getOption();
-    InterpreterRunner runner = context.getRunner();
-    String groupName = context.getInterpreterGroupName();
-
-    int connectTimeout =
-        zConf.getInt(ZeppelinConfiguration.ConfVars.ZEPPELIN_INTERPRETER_CONNECT_TIMEOUT);
-    if (option.isExistingProcess()) {
-      return new RemoteInterpreterRunningProcess(
-          connectTimeout,
-          option.getHost(),
-          option.getPort());
-    } else {
-      return createRemoteProcess(context, runner, groupName, connectTimeout);
-    }
-  }
-
   protected InterpreterClient createRemoteProcess(InterpreterLaunchContext context,
                                                   InterpreterRunner runner,
                                                   String groupName,
@@ -69,20 +42,18 @@ public class ShellScriptLauncher extends InterpreterLauncher {
     // create new remote process
     String localRepoPath = zConf.getInterpreterLocalRepoPath() + "/"
             + context.getInterpreterGroupId();
-    return new RemoteInterpreterManagedProcess(
+    return new SparkK8RemoteInterpreterManagedProcess(
             runner != null ? runner.getPath() : zConf.getInterpreterRemoteRunnerPath(),
             zConf.getCallbackPortRange(),
             zConf.getInterpreterDir() + "/" + groupName, localRepoPath,
-            buildEnvFromProperties(), connectTimeout, groupName);
+            buildEnvFromProperties(), connectTimeout, groupName, context.getInterpreterGroupId());
   }
 
+  @Override
   protected Map<String, String> buildEnvFromProperties() {
-    Map<String, String> env = new HashMap<>();
-    for (Object key : properties.keySet()) {
-      if (RemoteInterpreterUtils.isEnvString((String) key)) {
-        env.put((String) key, properties.getProperty((String) key));
-      }
-    }
+    Map<String, String> env = super.buildEnvFromProperties();
+    env.put("RUN_SPARK_ON_K8", Boolean.TRUE.toString());
     return env;
   }
+
 }

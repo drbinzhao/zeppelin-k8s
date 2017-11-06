@@ -17,55 +17,31 @@
 
 package org.apache.zeppelin.interpreter.remote;
 
-import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.exec.CommandLine;
-import org.apache.commons.exec.DefaultExecutor;
-import org.apache.commons.exec.ExecuteException;
 import org.apache.commons.exec.ExecuteResultHandler;
-import org.apache.commons.exec.ExecuteWatchdog;
-import org.apache.commons.exec.LogOutputStream;
-import org.apache.commons.exec.PumpStreamHandler;
-import org.apache.commons.exec.environment.EnvironmentUtils;
 import org.apache.thrift.TException;
 import org.apache.thrift.server.TServer;
 import org.apache.thrift.server.TThreadPoolServer;
 import org.apache.thrift.transport.TServerSocket;
 import org.apache.thrift.transport.TTransportException;
-import org.apache.zeppelin.helium.ApplicationEventListener;
-import org.apache.zeppelin.interpreter.InterpreterException;
 import org.apache.zeppelin.interpreter.thrift.CallbackInfo;
 import org.apache.zeppelin.interpreter.thrift.RemoteInterpreterCallbackService;
-import org.apache.zeppelin.interpreter.thrift.RemoteInterpreterService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * This class manages start / stop of remote interpreter process
  */
-public class RemoteInterpreterManagedProcess extends RemoteInterpreterProcess
+public class RemoteInterpreterManagedProcess extends BaseRemoteInterpreterManagedProcess
     implements ExecuteResultHandler {
   private static final Logger logger = LoggerFactory.getLogger(
       RemoteInterpreterManagedProcess.class);
 
-  private final String interpreterRunner;
-  private final String portRange;
-  private DefaultExecutor executor;
-  private ExecuteWatchdog watchdog;
-  private AtomicBoolean running = new AtomicBoolean(false);
   TServer callbackServer;
-  private String host = null;
-  private int port = -1;
-  private final String interpreterDir;
-  private final String localRepoDir;
-  private final String interpreterGroupName;
-
-  private Map<String, String> env;
 
   public RemoteInterpreterManagedProcess(
       String intpRunner,
@@ -75,23 +51,7 @@ public class RemoteInterpreterManagedProcess extends RemoteInterpreterProcess
       Map<String, String> env,
       int connectTimeout,
       String interpreterGroupName) {
-    super(connectTimeout);
-    this.interpreterRunner = intpRunner;
-    this.portRange = portRange;
-    this.env = env;
-    this.interpreterDir = intpDir;
-    this.localRepoDir = localRepoDir;
-    this.interpreterGroupName = interpreterGroupName;
-  }
-
-  @Override
-  public String getHost() {
-    return "localhost";
-  }
-
-  @Override
-  public int getPort() {
-    return port;
+    super(intpRunner, portRange, intpDir, localRepoDir, env, connectTimeout, interpreterGroupName);
   }
 
   @Override
@@ -169,26 +129,7 @@ public class RemoteInterpreterManagedProcess extends RemoteInterpreterProcess
     cmdLine.addArgument("-g", false);
     cmdLine.addArgument(interpreterGroupName, false);
 
-    executor = new DefaultExecutor();
-
-    ByteArrayOutputStream cmdOut = new ByteArrayOutputStream();
-    ProcessLogOutputStream processOutput = new ProcessLogOutputStream(logger);
-    processOutput.setOutputStream(cmdOut);
-
-    executor.setStreamHandler(new PumpStreamHandler(processOutput));
-    watchdog = new ExecuteWatchdog(ExecuteWatchdog.INFINITE_TIMEOUT);
-    executor.setWatchdog(watchdog);
-
-    try {
-      Map procEnv = EnvironmentUtils.getProcEnvironment();
-      procEnv.putAll(env);
-
-      logger.info("Run interpreter process {}", cmdLine);
-      executor.execute(cmdLine, procEnv, this);
-    } catch (IOException e) {
-      running.set(false);
-      throw new RuntimeException(e);
-    }
+    ByteArrayOutputStream cmdOut = executeCommand(cmdLine);
 
     try {
       synchronized (running) {
@@ -197,7 +138,7 @@ public class RemoteInterpreterManagedProcess extends RemoteInterpreterProcess
         }
       }
       if (!running.get()) {
-        callbackServer.stop();
+        stopEndPoint();
         throw new RuntimeException(new String(cmdOut.toByteArray()));
       }
     } catch (InterruptedException e) {
@@ -206,120 +147,9 @@ public class RemoteInterpreterManagedProcess extends RemoteInterpreterProcess
     processOutput.setOutputStream(null);
   }
 
-  public void stop() {
-    // shutdown EventPoller first.
-    this.getRemoteInterpreterEventPoller().shutdown();
-    if (callbackServer.isServing()) {
-      callbackServer.stop();
-    }
-    if (isRunning()) {
-      logger.info("kill interpreter process");
-      try {
-        callRemoteFunction(new RemoteFunction<Void>() {
-          @Override
-          public Void call(RemoteInterpreterService.Client client) throws Exception {
-            client.shutdown();
-            return null;
-          }
-        });
-      } catch (Exception e) {
-        logger.warn("ignore the exception when shutting down");
-      }
-      watchdog.destroyProcess();
-    }
-
-    executor = null;
-    watchdog = null;
-    running.set(false);
-    logger.info("Remote process terminated");
-  }
-
   @Override
-  public void onProcessComplete(int exitValue) {
-    logger.info("Interpreter process exited {}", exitValue);
-    running.set(false);
-
+  protected void stopEndPoint() {
+    callbackServer.stop();
   }
 
-  @Override
-  public void onProcessFailed(ExecuteException e) {
-    logger.info("Interpreter process failed {}", e);
-    running.set(false);
-  }
-
-  @VisibleForTesting
-  public Map<String, String> getEnv() {
-    return env;
-  }
-
-  @VisibleForTesting
-  public String getLocalRepoDir() {
-    return localRepoDir;
-  }
-
-  @VisibleForTesting
-  public String getInterpreterDir() {
-    return interpreterDir;
-  }
-
-  @VisibleForTesting
-  public String getInterpreterGroupName() {
-    return interpreterGroupName;
-  }
-
-  @VisibleForTesting
-  public String getInterpreterRunner() {
-    return interpreterRunner;
-  }
-
-  public boolean isRunning() {
-    return running.get();
-  }
-
-  private static class ProcessLogOutputStream extends LogOutputStream {
-
-    private Logger logger;
-    OutputStream out;
-
-    public ProcessLogOutputStream(Logger logger) {
-      this.logger = logger;
-    }
-
-    @Override
-    protected void processLine(String s, int i) {
-      this.logger.debug(s);
-    }
-
-    @Override
-    public void write(byte [] b) throws IOException {
-      super.write(b);
-
-      if (out != null) {
-        synchronized (this) {
-          if (out != null) {
-            out.write(b);
-          }
-        }
-      }
-    }
-
-    @Override
-    public void write(byte [] b, int offset, int len) throws IOException {
-      super.write(b, offset, len);
-
-      if (out != null) {
-        synchronized (this) {
-          if (out != null) {
-            out.write(b, offset, len);
-          }
-        }
-      }
-    }
-
-    public void setOutputStream(OutputStream out) {
-      synchronized (this) {
-        this.out = out;
-      }
-    }
-  }
 }

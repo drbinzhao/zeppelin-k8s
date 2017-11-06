@@ -254,9 +254,11 @@ public class RemoteInterpreterServer
       throws TTransportException, InterruptedException, IOException {
     String callbackHost = null;
     int port = Constants.ZEPPELIN_INTERPRETER_DEFAUlT_PORT;
-    if (args.length > 0) {
+    if (args.length == 2) {
       callbackHost = args[0];
       port = Integer.parseInt(args[1]);
+    } else if (args.length == 1) {
+      port = Integer.parseInt(args[0]);
     }
     RemoteInterpreterServer remoteInterpreterServer =
         new RemoteInterpreterServer(callbackHost, port);
