@@ -1758,7 +1758,7 @@ public class NotebookServer extends WebSocketServlet
 */
       Paragraph p2 = setParagraphUsingMessage2(note, raw, fromMessage, p1,
               paragraphId, text, title, params, config);
-      persistAndExecuteSingleParagraph(conn, note, p2);
+      persistAndExecuteSingleParagraph(conn, note, p2, false);
     }
   }
 
