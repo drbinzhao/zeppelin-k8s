@@ -56,7 +56,7 @@ public class ManagedInterpreterGroup extends InterpreterGroup {
 
   public synchronized RemoteInterpreterProcess getOrCreateInterpreterProcess() throws IOException {
     if (remoteInterpreterProcess == null) {
-      LOGGER.info("Create InterperterProcess for InterpreterGroup: " + getId());
+      LOGGER.info("Create InterpreterProcess for InterpreterGroup: " + getId());
       remoteInterpreterProcess = interpreterSetting.createInterpreterProcess();
     }
     return remoteInterpreterProcess;
@@ -82,7 +82,8 @@ public class ManagedInterpreterGroup extends InterpreterGroup {
    * @param sessionId
    */
   public synchronized void close(String sessionId) {
-    LOGGER.info("Close Session: " + sessionId);
+    LOGGER.info("Close Session: " + sessionId + " for interpreter setting: " +
+        interpreterSetting.getName());
     close(sessions.remove(sessionId));
     //TODO(zjffdu) whether close InterpreterGroup if there's no session left in Zeppelin Server
     if (sessions.isEmpty() && interpreterSetting != null) {
