@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.net.URL;
+import java.net.MalformedURLException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -84,7 +85,19 @@ public class ZeppelinConfiguration extends XMLConfiguration {
     ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
     URL url;
 
-    url = ZeppelinConfiguration.class.getResource(ZEPPELIN_SITE_XML);
+    String zeppelinConfDir = System.getenv("ZEPPELIN_CONF_DIR");
+    if (zeppelinConfDir != null) {
+      try {
+        url = new URL("file://" + zeppelinConfDir + "/" + ZEPPELIN_SITE_XML);
+      } catch (MalformedURLException e) {
+        e.printStackTrace();
+        throw new RuntimeException(e);
+      }
+    }
+    else {
+      url = ZeppelinConfiguration.class.getResource(ZEPPELIN_SITE_XML);
+    }
+
     if (url == null) {
       ClassLoader cl = ZeppelinConfiguration.class.getClassLoader();
       if (cl != null) {
