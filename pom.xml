@@ -755,6 +755,17 @@
           <id>cloudera</id>
           <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
         </repository>
+        <repository>
+          <id>hortonworks.releases</id>
+          <name>Hortonworks Releases Repository</name>
+          <url>http://repo.hortonworks.com/content/repositories/releases</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>false</enabled>
+          </snapshots>
+        </repository>
       </repositories>
     </profile>
 
