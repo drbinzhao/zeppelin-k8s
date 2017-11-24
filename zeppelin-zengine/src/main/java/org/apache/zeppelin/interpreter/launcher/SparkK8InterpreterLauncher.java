@@ -26,6 +26,7 @@ import org.apache.zeppelin.interpreter.remote.SparkK8RemoteInterpreterManagedPro
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.util.Map;
 
 /**
@@ -35,6 +36,10 @@ import java.util.Map;
 public class SparkK8InterpreterLauncher extends SparkInterpreterLauncher {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(SparkInterpreterLauncher.class);
+  public static final String SPARK_KUBERNETES_DRIVER_LABEL_INTERPRETER_PROCESS_ID =
+    "spark.kubernetes.driver.label.interpreter-processId";
+  public static final String SPARK_APP_NAME = "spark.app.name";
+  public static final String SPARK_METRICS_NAMESPACE = "spark.metrics.namespace";
 
   public SparkK8InterpreterLauncher(ZeppelinConfiguration zConf) {
     super(zConf);
@@ -62,23 +67,19 @@ public class SparkK8InterpreterLauncher extends SparkInterpreterLauncher {
 
       String groupId = context.getInterpreterSettingGroupId();
       String processIdLabel = generatePodLabelId(groupId);
-      properties.put("spark.kubernetes.driver.label.interpreter-processId", processIdLabel);
+      properties.put(SPARK_KUBERNETES_DRIVER_LABEL_INTERPRETER_PROCESS_ID, processIdLabel);
       groupId = formatId(groupId, 50);
       // add groupId to app name, this will be the prefix for driver pod name if it's not
       // explicitly specified
-      String driverPodNamePrefix = properties.get("spark.app.name") + "-" + groupId;
-      properties.put("spark.app.name", driverPodNamePrefix);
+      String driverPodNamePrefix = properties.get(SPARK_APP_NAME) + "-" + groupId;
+      properties.put(SPARK_APP_NAME, driverPodNamePrefix);
       // set same id for metrics namespace to be able to identify metrics of a specific app
-      properties.put("spark.metrics.namespace", driverPodNamePrefix);
+      properties.put(SPARK_METRICS_NAMESPACE, driverPodNamePrefix);
 
       Map<String, String> env = super.buildEnvFromProperties();
-      StringBuilder sparkConfBuilder = new StringBuilder(env.get("ZEPPELIN_SPARK_CONF"));
-      sparkConfBuilder.append(" --files " + zConf.getConfDir() + "/log4j_k8_cluster" +
-        ".properties");
-      env.put("ZEPPELIN_SPARK_CONF", sparkConfBuilder.toString());
-
-      LOGGER.info(sparkConfBuilder.toString());
-
+      String sparkConf = buildSparkConf(localRepoPath, env);
+      LOGGER.debug(sparkConf);
+      env.put("ZEPPELIN_SPARK_CONF", sparkConf);
       env.put("ZEPPELIN_SPARK_K8_CLUSTER", "true");
 
       return new SparkK8RemoteInterpreterManagedProcess(
@@ -87,6 +88,29 @@ public class SparkK8InterpreterLauncher extends SparkInterpreterLauncher {
               zConf.getInterpreterDir() + "/" + groupName, localRepoPath,
               env, connectTimeout, processIdLabel);
     }
+  }
+
+  private String buildSparkConf(String localRepoPath, Map<String, String> env) {
+    StringBuilder sparkJarsBuilder = new StringBuilder();
+    File localRepo = new File(localRepoPath);
+    if (localRepo.isDirectory()) {
+      for (File file : localRepo.listFiles()) {
+        if (sparkJarsBuilder.length() > 0) {
+          sparkJarsBuilder.append(",");
+        }
+        if (file.getName().endsWith("jar")) {
+          sparkJarsBuilder.append(file.getPath());
+        }
+      }
+    }
+
+    StringBuilder sparkConfBuilder = new StringBuilder(env.get("ZEPPELIN_SPARK_CONF"));
+    if (sparkJarsBuilder.length() > 0) {
+      sparkConfBuilder.append(" --jars ").append(sparkJarsBuilder.toString());
+    }
+    sparkConfBuilder.append(" --files " + zConf.getConfDir() + "/log4j_k8_cluster" +
+      ".properties");
+    return sparkConfBuilder.toString();
   }
 
   /**
